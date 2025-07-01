@@ -83,9 +83,9 @@ class DS_FF_Layer(nn.Module):
             nn.Linear(128, num_classes)
         ) if has_aux_classifier else None
         
-        self.opt = Adam(self.parameters(), lr=0.01)
+        self.opt = Adam(self.parameters(), lr=0.03)
         self.threshold = nn.Parameter(torch.tensor(2.0))  # 可学习的阈值
-        self.num_epochs = 500  # 减少每层训练轮次
+        self.num_epochs = 300  # 减少每层训练轮次
 
     def forward(self, x):
         return self.main(x)
@@ -129,18 +129,8 @@ class DS_FF_Net(nn.Module):
             self.layers.append(DS_FF_Layer(dims[d], dims[d + 1], num_classes, has_aux_classifier).cuda())
 
     def predict(self, x, batch_size=1000):
-        goodness_per_label = []
-        for label in range(self.num_classes):
-            h = overlay_y_on_x(x, torch.tensor([label] * x.shape[0]).cuda(), self.num_classes)
-            goodness = []
-            for layer in self.layers:
-                h = layer(h)
-                goodness += [h.pow(2).mean(1)]
-            goodness_per_label += [sum(goodness).unsqueeze(1)]
-        goodness_per_label = torch.cat(goodness_per_label, 1)
-        
         predictions = []
-        for i in range(0, x.shape[0], batch_size):
+        for i in tqdm(range(0, x.shape[0], batch_size)):
             x_batch = x[i:i+batch_size]
             goodness_per_label = []
             for label in range(self.num_classes):
