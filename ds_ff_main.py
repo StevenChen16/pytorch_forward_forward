@@ -208,7 +208,7 @@ if __name__ == "__main__":
         start_time = time.time()
         net = torch.compile(net)
         end_time = time.time()
-        print(f"Model compiled in {time(end_time - start_time)}")
+        print(f"Model compiled in {end_time - start_time:.2f}s")
 
     if args.load_checkpoint:
         print(f"Loading model from {args.load_checkpoint}...")
