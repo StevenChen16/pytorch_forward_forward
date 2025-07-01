@@ -140,6 +140,8 @@ if __name__ == "__main__":
                         help='Directory to save checkpoints (default: ./checkpoints)')
     parser.add_argument('--no-train', action='store_true',
                         help='Skip training and only perform evaluation')
+    parser.add_argument('--no-compile', action='store_true',
+                        help='Disable torch.compile for the model')
     args = parser.parse_args()
 
     torch.manual_seed(1234)
@@ -147,6 +149,14 @@ if __name__ == "__main__":
         args.dataset, args.train_batch_size, args.test_batch_size, args.data_dir)
 
     net = Net([img_size, 500, 500], num_classes=num_classes)
+    
+    if not args.no_compile:
+        import time
+        print("Compiling the model...")
+        start_time = time.time()
+        net = torch.compile(net)
+        end_time = time.time()
+        print(f"Model compiled in {end_time - start_time:.2f}s")
 
     if args.load_checkpoint:
         print(f"Loading model from {args.load_checkpoint}...")
