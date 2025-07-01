@@ -67,7 +67,7 @@ def overlay_y_on_x(x, y, num_classes):
 
 
 class DS_FF_Layer(nn.Module):
-    def __init__(self, in_features, out_features, num_classes, is_output_layer=False):
+    def __init__(self, in_features, out_features, num_classes, has_aux_classifier=False):
         super().__init__()
         # 主路径
         self.main = nn.Sequential(
@@ -81,7 +81,7 @@ class DS_FF_Layer(nn.Module):
             nn.Linear(out_features, 128),  # 瓶颈层
             nn.ReLU(),
             nn.Linear(128, num_classes)
-        ) if not is_output_layer else None
+        ) if has_aux_classifier else None
         
         self.opt = Adam(self.parameters(), lr=0.01)
         self.threshold = nn.Parameter(torch.tensor(2.0))  # 可学习的阈值
@@ -125,8 +125,8 @@ class DS_FF_Net(nn.Module):
         self.layers = nn.ModuleList()
         self.num_classes = num_classes
         for d in range(len(dims) - 1):
-            is_output_layer = (d == len(dims) - 2)
-            self.layers.append(DS_FF_Layer(dims[d], dims[d + 1], num_classes, is_output_layer).cuda())
+            has_aux_classifier = (d % 2 == 0) and (d < len(dims) - 2)
+            self.layers.append(DS_FF_Layer(dims[d], dims[d + 1], num_classes, has_aux_classifier).cuda())
 
     def predict(self, x, batch_size=1000):
         goodness_per_label = []
@@ -166,12 +166,10 @@ def train_ds_ff_net(net, x_pos, x_neg, y):
     
     h_pos, h_neg = x_pos, x_neg
     for i, layer in enumerate(net.layers):
-        print(f'Training layer {i} with deep supervision...')
-        # 仅在前80%层使用深度监督
-        use_ds = i < len(net.layers) * 0.8
+        print(f'Training layer {i}...')
         h_pos, h_neg = layer.train(
             h_pos, h_neg,
-            global_target if use_ds else None
+            global_target if layer.aux_classifier else None
         )
 
 
@@ -205,8 +203,12 @@ if __name__ == "__main__":
     net = DS_FF_Net([img_size, 500, 500, 500, 500], num_classes=num_classes)
 
     if not args.no_compile:
+        import time
         print("Compiling the model...")
+        start_time = time.time()
         net = torch.compile(net)
+        end_time = time.time()
+        print(f"Model compiled in {time(end_time - start_time)}")
 
     if args.load_checkpoint:
         print(f"Loading model from {args.load_checkpoint}...")
