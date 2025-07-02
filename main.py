@@ -7,6 +7,7 @@ from torchvision.transforms import Compose, ToTensor, Normalize, Lambda, Resize,
 from torch.utils.data import DataLoader
 import argparse
 import os
+import time
 
 
 def get_loaders(dataset, train_batch_size, test_batch_size, data_dir='./data/'):
@@ -67,12 +68,12 @@ def overlay_y_on_x(x, y, num_classes):
 
 class Net(torch.nn.Module):
 
-    def __init__(self, dims, num_classes=10):
+    def __init__(self, dims, num_classes=10, num_epochs=1000):
         super().__init__()
         self.layers = nn.ModuleList()
         self.num_classes = num_classes
         for d in range(len(dims) - 1):
-            self.layers.append(Layer(dims[d], dims[d + 1]).cuda())
+            self.layers.append(Layer(dims[d], dims[d + 1], num_epochs=num_epochs).cuda())
 
     def predict(self, x):
         goodness_per_label = []
@@ -86,21 +87,24 @@ class Net(torch.nn.Module):
         goodness_per_label = torch.cat(goodness_per_label, 1)
         return goodness_per_label.argmax(1)
 
-    def train(self, x_pos, x_neg):
+    def train_ff(self, x_pos, x_neg):
         h_pos, h_neg = x_pos, x_neg
         for i, layer in enumerate(self.layers):
             print('training layer', i, '...')
-            h_pos, h_neg = layer.train(h_pos, h_neg)
+            start_time = time.time()
+            h_pos, h_neg = layer.train_layer(h_pos, h_neg)
+            end_time = time.time()
+            print(f'layer {i} training time: {end_time - start_time:.2f}s')
 
 
 class Layer(nn.Linear):
     def __init__(self, in_features, out_features,
-                 bias=True, device=None, dtype=None):
+                 bias=True, device=None, dtype=None, num_epochs=1000):
         super().__init__(in_features, out_features, bias, device, dtype)
         self.relu = torch.nn.ReLU()
         self.opt = Adam(self.parameters(), lr=0.03)
         self.threshold = 2.0
-        self.num_epochs = 1000
+        self.num_epochs = num_epochs
 
     def forward(self, x):
         x_direction = x / (x.norm(2, 1, keepdim=True) + 1e-4)
@@ -108,8 +112,9 @@ class Layer(nn.Linear):
             torch.mm(x_direction, self.weight.T) +
             self.bias.unsqueeze(0))
 
-    def train(self, x_pos, x_neg):
-        for i in tqdm(range(self.num_epochs)):
+    def train_layer(self, x_pos, x_neg):
+        # for i in tqdm(range(self.num_epochs)):
+        for i in range(self.num_epochs):
             g_pos = self.forward(x_pos).pow(2).mean(1)
             g_neg = self.forward(x_neg).pow(2).mean(1)
             loss = torch.log(1 + torch.exp(torch.cat([
@@ -142,16 +147,17 @@ if __name__ == "__main__":
                         help='Skip training and only perform evaluation')
     parser.add_argument('--no-compile', action='store_true',
                         help='Disable torch.compile for the model')
+    parser.add_argument('--num-epochs', type=int, default=1000,
+                        help='Number of epochs to train (default: 1000)')
     args = parser.parse_args()
 
     torch.manual_seed(1234)
     train_loader, test_loader, num_classes, img_size = get_loaders(
         args.dataset, args.train_batch_size, args.test_batch_size, args.data_dir)
 
-    net = Net([img_size, 500, 500], num_classes=num_classes)
+    net = Net([img_size, 500, 500], num_classes=num_classes, num_epochs=args.num_epochs)
     
     if not args.no_compile:
-        import time
         print("Compiling the model...")
         start_time = time.time()
         net = torch.compile(net)
@@ -171,7 +177,7 @@ if __name__ == "__main__":
         rnd = torch.randperm(x.size(0))
         x_neg = overlay_y_on_x(x, y[rnd], num_classes)
 
-        net.train(x_pos, x_neg)
+        net.train_ff(x_pos, x_neg)
         print("Training complete.")
 
         if args.save_checkpoint:
