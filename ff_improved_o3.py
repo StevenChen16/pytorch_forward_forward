@@ -240,7 +240,7 @@ def ablation_experiment(epochs=10, dataset='cifar10', device='cuda'):
         model = FFNet(ic,C,sz,channel_scale=cfg['scale']).to(device)
         try:
             start_time = time.time()
-            model = torch.compile(model)
+            # model = torch.compile(model)
             print(f"Model compiled in {time.time() - start_time:.2f} seconds")
         except: pass
         opt = optim.AdamW(model.parameters(),lr=5e-4,weight_decay=5e-4)
