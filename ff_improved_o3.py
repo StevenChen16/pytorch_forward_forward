@@ -128,7 +128,7 @@ def ce_loss(logits,y,smooth=0.1):
     return F.cross_entropy(logits,y)
 
 # ========== Ablation Training ========= #
-def train_epoch(model,loader,opt,C, ablation_cfg):
+def train_epoch(model,loader,opt,C, ablation_cfg, device='cuda'):
     model.train(); tot=samp=0
     for batch in loader:
         # cutmix batch: imgs, y1, y2, lam
@@ -159,7 +159,7 @@ def train_epoch(model,loader,opt,C, ablation_cfg):
         tot+=loss.item()*B; samp+=B
     return tot/samp
 
-def val_loss(model,loader,C, ablation_cfg):
+def val_loss(model,loader,C, ablation_cfg, device='cuda'):
     model.eval(); tot=samp=0
     with torch.no_grad():
         for x,y in loader:
@@ -191,7 +191,7 @@ def predict(model,x,C):
         scores.append(logits[:,cls])
     return torch.stack(scores,1)
 
-def evaluate(model,loader,C):
+def evaluate(model,loader,C, device='cuda'):
     model.eval(); corr=tot=0
     with torch.no_grad():
         for x,y in loader:
@@ -213,7 +213,7 @@ def one_hot(y,C):
     return F.one_hot(y,C).float()
 
 # ========== Compare Runs ========== #
-def ablation_experiment(epochs=10, dataset='cifar10'):
+def ablation_experiment(epochs=10, dataset='cifar10', device='cuda'):
     """
     跑多组方案对比,每组dict:
       'name': 实验名
@@ -239,7 +239,9 @@ def ablation_experiment(epochs=10, dataset='cifar10'):
         tr,te,ic,sz,C = get_loader(dataset, use_cutmix=cfg['cutmix'])
         model = FFNet(ic,C,sz,channel_scale=cfg['scale']).to(device)
         try:
+            start_time = time.time()
             model = torch.compile(model)
+            print(f"Model compiled in {time.time() - start_time:.2f} seconds")
         except: pass
         opt = optim.AdamW(model.parameters(),lr=5e-4,weight_decay=5e-4)
         sched = optim.lr_scheduler.CosineAnnealingLR(opt,epochs)
@@ -247,7 +249,7 @@ def ablation_experiment(epochs=10, dataset='cifar10'):
         logs=[]
         for ep in range(1,epochs+1):
             t0 = time.time()
-            train_loss = train_epoch(model,tr,opt,C,cfg)
+            train_loss = train_epoch(model,tr,opt,C,cfg, device=device)
             val_loss_  = val_loss(model,te,C,cfg)
             acc        = evaluate(model,te,C)
             sched.step()
@@ -260,4 +262,4 @@ def ablation_experiment(epochs=10, dataset='cifar10'):
 
 # 运行：
 if __name__=='__main__':
-    ablation_experiment(epochs=10, dataset='cifar10')
+    ablation_experiment(epochs=10, dataset='cifar10', device='cuda' if torch.cuda.is_available() else 'cpu')
